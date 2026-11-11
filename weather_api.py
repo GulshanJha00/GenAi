@@ -63,6 +63,18 @@ JSON OUTPUT FORMAT:
     "input": "Tool input, only for action",
     "output": "Tool observation, when relevant"
 }
+
+NEW QUERY RULES:
+
+1. Every new user query must start with the understand step.
+2. Never reuse a previous result as the answer to a new query.
+3. Previous tool observations are historical data, not current tool results.
+4. If the user asks for a new city's weather, execute get_weather
+   for that city.
+5. If the user asks about previous results, use conversation history.
+6. Never invent weather information.
+7. Follow this sequence for every new query:
+   understand -> plan -> action -> verification -> result.
 """
 
 
@@ -81,40 +93,52 @@ avaiable_tools = {
         "description": "Takes a city name as an input and returns the current weather for the city"
     },
 }
+
 message = [
     { "role": "system", "content": system_prompt },
 ]
 
-query = input("> ")
-message.append({ "role": "user", "content": query })
 while True:
-    chat_completion = client.chat.completions.create(
-        response_format={"type":"json_object"},
-        messages=message,
-        model="openai/gpt-oss-120b",
-    )
-    parsed_res = json.loads(chat_completion.choices[0].message.content)
+    query = input("> ")
+    message.append({ "role": "user", "content": query })
+    while True:
+        chat_completion = client.chat.completions.create(
+            response_format={"type":"json_object"},
+            messages=message,
+            model="openai/gpt-oss-120b",
+        )
+        parsed_res = json.loads(chat_completion.choices[0].message.content)
 
-    if parsed_res.get('step') == "understand":
-        print(f"🧠:{parsed_res.get('step')}:- {parsed_res.get('content')}")
-        message.append({"role":"assistant", "content":json.dumps(parsed_res)})
-        continue
-
-
-    if parsed_res.get('step') == "plan":
-        print(f"🧠: {parsed_res.get('step')}:- {parsed_res.get('content')}")
-        message.append({"role":"assistant", "content":json.dumps(parsed_res)})
-        continue
-
-    if parsed_res.get('step') == "action":
-            tool_name = parsed_res.get('function')
-            tool_input = parsed_res.get("input")
-
-            if tool_name in avaiable_tools:
-                output = avaiable_tools[tool_name].get("fn")(tool_input)
-                message.append({ "role": "user", "content": json.dumps({ "step": "verification", "output":  output}) })
+        if parsed_res.get('step') == "understand":
+            print(f"🧠:{parsed_res.get('step')}:- {parsed_res.get('content')}")
+            message.append({"role":"assistant", "content":json.dumps(parsed_res)})
             continue
 
-    if parsed_res.get('step') == "result":
-        print(f"🤖: {parsed_res.get('content')}")
-        break
+
+        if parsed_res.get('step') == "plan":
+            print(f"🧠: {parsed_res.get('step')}:- {parsed_res.get('content')}")
+            message.append({"role":"assistant", "content":json.dumps(parsed_res)})
+            continue
+
+        if parsed_res.get('step') == "action":
+                tool_name = parsed_res.get('function')
+                tool_input = parsed_res.get("input")
+
+                if tool_name in avaiable_tools:
+                    output = avaiable_tools[tool_name].get("fn")(tool_input)
+                    message.append({
+                        "role": "user",
+                        "content": json.dumps({
+                            "step": "verification",
+                            "output": output
+                        })
+                    })
+                continue
+        if parsed_res.get("step") == "verification":
+            message.append({"role":"assistant", "content":json.dumps(parsed_res)})
+            continue
+
+
+        if parsed_res.get('step') == "result":
+            print(f"🤖: {parsed_res.get('content')}")
+            break
